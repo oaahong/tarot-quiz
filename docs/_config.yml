@@ -1,0 +1,9 @@
+# Minimal config to disable Jekyll processing
+title: Tarot Quiz
+description: A tarot card reading quiz application
+baseurl: /tarot-quiz
+url: https://oaahong.github.io
+
+# Disable Jekyll processing
+plugins: []
+include: ['_pages']
