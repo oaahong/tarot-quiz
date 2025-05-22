@@ -480,19 +480,11 @@ document.addEventListener('DOMContentLoaded', () => {
     fetch('tarot_cards.json')
         .then(response => response.json())
         .then(tarotCards => {
-            const tarotQuiz = new TarotQuiz(tarotCards);
-            const startButton = document.getElementById('start-button');
-            const quizContainer = document.getElementById('quiz-container');
-            const resultContainer = document.getElementById('result-container');
-
-            startButton.addEventListener('click', () => {
-                quizContainer.style.display = 'block';
-                resultContainer.style.display = 'none';
-                tarotQuiz.start();
-            });
         })
         .catch(error => {
-            console.error('Error loading tarot cards:', error);
+            console.warn('無法從 JSON 加載牌組，使用預設牌組:', error);
+            const quiz = new TarotQuiz(tarotCards);
+            quiz.start();
         });
 });
 
@@ -500,58 +492,39 @@ class TarotQuiz {
     constructor(cards) {
         this.cards = cards;
         this.totalQuestions = 0;
+        this.correctAnswers = 0;
         this.currentCard = null;
-        this.cardImageEl = document.getElementById('card-image');
-        this.cardNameEl = document.getElementById('card-name');
+        
+        // 用於追蹤洗牌後的牌組與當前索引
+        this.shuffledCards = [];
+        this.currentCardIndex = 0;
+        
+        // DOM 元素
+        this.cardImageEl    = document.getElementById('card-image');
+        this.cardNameEl     = document.getElementById('card-name');
         this.textQuestionEl = document.getElementById('text-question');
-        this.optionsEl = document.getElementById('options');
-        this.feedbackEl = document.getElementById('feedback');
+        this.optionsEl      = document.getElementById('options');
+        this.feedbackEl     = document.getElementById('feedback');
+        this.scoreEl        = document.getElementById('score');
+        
         this.textQuestionTemplates = [
             '這張牌代表什麼意義？',
             '這張牌在塔羅牌中有什麼特別的含義？',
             '這張牌想要傳達什麼訊息？'
         ];
         
-        // 初始化随机种子，保证每次刷新页面随机性不同
-        Math.seedrandom(new Date().getTime());
+        this.initializeShuffledCards();
     }
 
-    // Fisher-Yates 洗牌算法
-    shuffleArray(array) {
-        for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [array[i], array[j]] = [array[j], array[i]];
-        }
+    // 複製並洗牌，重置索引
+    initializeShuffledCards() {
+        this.shuffledCards = [...this.cards];
+        this.shuffleArray(this.shuffledCards);
+        this.currentCardIndex = 0;
+        console.log('牌組已洗牌，共', this.shuffledCards.length, '張牌');
     }
 
-    generateRandomOptions(correctCard) {
-        // 從 correctCard 的 keywords 中隨機選擇一個關鍵字作為正確答案
-        const correctKeyword = correctCard.keywords[Math.floor(Math.random() * correctCard.keywords.length)];
-
-        // 過濾掉當前牌，得到其他牌組成的陣列
-        const remainingCards = this.cards.filter(card => card !== correctCard);
-
-        // 準備錯誤選項
-        const wrongKeywords = [];
-        while (wrongKeywords.length < 3) {
-            // 隨機選擇一張牌
-            const randomCard = remainingCards[Math.floor(Math.random() * remainingCards.length)];
-            // 從該牌的 keywords 中隨機選擇一個
-            const randomKeyword = randomCard.keywords[Math.floor(Math.random() * randomCard.keywords.length)];
-
-            // 確保不重複
-            if (!wrongKeywords.includes(randomKeyword)) {
-                wrongKeywords.push(randomKeyword);
-            }
-        }
-
-        // 組合選項
-        const options = [correctKeyword, ...wrongKeywords];
-
-        // 隨機排序
-        return this.shuffleArray(options);
-    }
-
+    // Fisher–Yates 隨機排序
     shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -560,112 +533,140 @@ class TarotQuiz {
         return array;
     }
 
-    displayQuestion() {
-        // 保存当前卡片的全局变量，以便在回调中使用
-        const self = this;
-
-        // 定义图片加载失败的回调函数
-        function handleImageLoadError() {
-            console.error('图片加载失败：', self.currentCard);
-            // 重新选择卡片
-            self.displayQuestion();
+    // 依序取下一張牌，取完後自動重新洗牌
+    getNextCard() {
+        if (this.currentCardIndex >= this.shuffledCards.length) {
+            console.log('一輪完成，重新洗牌');
+            this.initializeShuffledCards();
         }
-
-        // 定义图片加载成功的回调函数
-        function handleImageLoadSuccess() {
-            console.log('图片加载成功：', self.currentCard);
-        }
-
-        // 随机选择一张卡牌
-        const randomIndex = Math.floor(Math.random() * this.cards.length);
-        this.currentCard = this.cards[randomIndex];
-        this.totalQuestions++;
-
-        // 特殊处理某些卡牌的名称映射
-        const cardNameMap = {
-            '皇后': '皇后',
-            '皇帝': '皇帝',
-            '教皇': '教皇',
-            '戀人': '戀人',
-            '戰車': '戰車',
-            '命運之輪': '命運之輪',
-            '正義': '正義',
-            '倒吊人': '倒吊人',
-            '死亡': '死亡',
-            '節制': '節制',
-            '惡魔': '惡魔'
-        };
-
-        const mappedName = cardNameMap[this.currentCard.name] || this.currentCard.name;
-        const expectedImagePath = `images/${this.currentCard.number}_${mappedName}.jpg`;
-        console.log('Loading Random Image:', expectedImagePath);
-        console.log('Current Random Card:', this.currentCard);
         
-        // 设置图片加载事件监听器
-        this.cardImageEl.onload = handleImageLoadSuccess;
-        this.cardImageEl.onerror = handleImageLoadError;
-        this.cardImageEl.src = expectedImagePath;
+        const card = this.shuffledCards[this.currentCardIndex];
+        this.currentCardIndex++;
+        console.log(`第 ${this.currentCardIndex}/${this.shuffledCards.length} 張牌: ${card.name}`);
+        return card;
+    }
 
-        this.cardNameEl.textContent = this.currentCard.name;
-        this.feedbackEl.textContent = '';
-
-        // 隨機選擇題目類型，但保持與當前卡片一致
-        const questionTypes = [
-            (card) => `${card.name}的核心意義是什麼？`,
-            (card) => `在${card.name}的關鍵詞中，哪一個最能代表牌的本質？`,
-            (card) => `${card.name}想要傳達的最重要訊息是什麼？`,
-            (card) => `${card.name}在塔羅牌中代表什麼樣的能量？`,
-            (card) => `當${card.name}出現時，它通常暗示什麼？`
+    // 產生 1 個正確 + 3 個錯誤關鍵字選項，然後打亂順序
+    generateRandomOptions(correctCard) {
+        const correctKeyword = correctCard.keywords[
+            Math.floor(Math.random() * correctCard.keywords.length)
         ];
 
-        // 使用當前卡片選擇題目
-        const questionTemplate = questionTypes[Math.floor(Math.random() * questionTypes.length)](this.currentCard);
-        this.textQuestionEl.textContent = questionTemplate;
+        const wrongKeywords = [];
+        const others = this.cards.filter(c => c !== correctCard);
+        while (wrongKeywords.length < 3) {
+            const rc = others[Math.floor(Math.random() * others.length)];
+            const kw = rc.keywords[Math.floor(Math.random() * rc.keywords.length)];
+            if (kw !== correctKeyword && !wrongKeywords.includes(kw)) {
+                wrongKeywords.push(kw);
+            }
+        }
 
-        const options = this.generateRandomOptions(this.currentCard);
-        this.optionsEl.innerHTML = options.map(option => 
-            `<div class="option" data-correct="${this.currentCard.keywords.includes(option)}">${option}</div>`
+        return this.shuffleArray([correctKeyword, ...wrongKeywords]);
+    }
+
+    displayQuestion() {
+        // 先取得下一張牌
+        this.currentCard = this.getNextCard();
+        
+        // zero-pad 號碼到兩位數，例如 "01", "02"
+        const num = String(this.currentCard.number).padStart(2, '0');
+        const name = this.currentCard.name;
+        const imagePath = `images/${num}_${name}.jpg`;
+        
+        // 只有在圖片成功載入時才增加總題數
+        const onImageLoad = () => {
+            console.log('圖片載入成功：', imagePath);
+            // 只有當圖片成功載入時才增加總題數
+            this.totalQuestions++;
+            this.updateScore();
+        };
+
+        // 先清除舊的錯誤 handler，避免多重呼叫
+        this.cardImageEl.onerror = null;
+        this.cardImageEl.onload = onImageLoad;
+        this.cardImageEl.onerror = () => {
+            console.warn('圖片載入失敗，跳到下一張：', imagePath);
+            // 解除錯誤監聽，並立刻顯示下一題
+            this.cardImageEl.onerror = null;
+            this.cardImageEl.onload = null;
+            this.displayQuestion();
+        };
+        this.cardImageEl.src = imagePath;
+
+        this.cardNameEl.textContent = name;
+        this.feedbackEl.textContent = '';
+
+        // 隨機挑一個問題模板
+        const questionTemplates = [
+            c => `${c.name}的核心意義是什麼？`,
+            c => `在${c.name}的關鍵詞中，哪一個能代表其本質？`,
+            c => `${c.name}想要傳達的最重要訊息是什麼？`,
+            c => `${c.name}在塔羅中代表什麼能量？`,
+            c => `當${c.name}出現時，它通常暗示什麼？`
+        ];
+        const tpl = questionTemplates[
+            Math.floor(Math.random() * questionTemplates.length)
+        ](this.currentCard);
+        this.textQuestionEl.textContent = tpl;
+
+        // 生成選項
+        const opts = this.generateRandomOptions(this.currentCard);
+        this.optionsEl.innerHTML = opts.map(opt => 
+            `<div class="option" data-correct="${this.currentCard.keywords.includes(opt)}">${opt}</div>`
         ).join('');
 
-        // 重新啟用選項
-        this.optionsEl.querySelectorAll('.option').forEach(optionEl => {
-            optionEl.style.pointerEvents = 'auto';
-            optionEl.classList.remove('correct', 'incorrect');
-            
-            optionEl.addEventListener('click', () => {
-                // 移除所有先前的高亮
-                this.optionsEl.querySelectorAll('.option').forEach(el => {
-                    el.classList.remove('correct', 'incorrect');
+        // 綁定點擊事件
+        this.optionsEl.querySelectorAll('.option').forEach(el => {
+            el.style.pointerEvents = 'auto';
+            el.classList.remove('correct', 'incorrect');
+            el.addEventListener('click', () => {
+                // 清除先前 highlight
+                this.optionsEl.querySelectorAll('.option').forEach(o => {
+                    o.classList.remove('correct', 'incorrect');
                 });
 
-                const isCorrect = optionEl.dataset.correct === 'true';
-                
-                // 高亮點選的選項
-                optionEl.classList.add(isCorrect ? 'correct' : 'incorrect');
-                
-                // 找出正確答案並高亮
-                const correctOptionEl = Array.from(this.optionsEl.children).find(el => el.dataset.correct === 'true');
-                if (correctOptionEl) {
-                    correctOptionEl.classList.add('correct');
+                const isCorrect = el.dataset.correct === 'true';
+                if (isCorrect) {
+                    el.classList.add('correct');
+                    this.correctAnswers++;
+                    this.feedbackEl.textContent = '太棒了！你答對了！';
+                } else {
+                    el.classList.add('incorrect');
+                    const correctEl = Array.from(this.optionsEl.children)
+                        .find(o => o.dataset.correct === 'true');
+                    correctEl.classList.add('correct');
+                    this.feedbackEl.textContent = `這次沒猜對，正確答案是「${correctEl.textContent}」`;
                 }
 
-                // 更新反饋文字
-                this.feedbackEl.textContent = isCorrect 
-                    ? '太棒了！你答對了！' 
-                    : `這次沒猜對，正確答案是「${correctOptionEl.textContent}」`;
+                // 禁用所有選項，防止重複點擊
+                this.optionsEl.querySelectorAll('.option')
+                    .forEach(o => o.style.pointerEvents = 'none');
 
-                // 禁用選項，防止重複點選
-                this.optionsEl.querySelectorAll('.option').forEach(el => {
-                    el.style.pointerEvents = 'none';
-                });
-
-                // 延遲顯示下一題
-                setTimeout(() => {
-                    this.displayQuestion();
-                }, 2000);
+                // 更新分數顯示
+                this.updateScore();
+                
+                // 2 秒後進入下一題
+                setTimeout(() => this.displayQuestion(), 2000);
             });
-
         });
+    }
+
+    updateScore() {
+        if (this.scoreEl) {
+            this.scoreEl.textContent = `得分: ${this.correctAnswers}/${this.totalQuestions}`;
+        }
+    }
+
+    start() {
+        console.log('測驗開始，總共有', this.cards.length, '張牌');
+        this.correctAnswers = 0;
+        this.totalQuestions = 0;
+        // 確保分數顯示為 0/0
+        if (this.scoreEl) {
+            this.scoreEl.textContent = '得分: 0/0';
+        }
+        this.displayQuestion();
     }
 
     handleAnswer(event) {
